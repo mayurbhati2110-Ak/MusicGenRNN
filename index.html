@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Music Generator — Demo</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: #f2f2f2;
+      margin: 0;
+      padding: 0;
+      text-align: center;
+    }
+    header {
+      padding: 2rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      padding: 2rem;
+    }
+    .card {
+      background: #1c1c1c;
+      padding: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      transition: transform 0.3s ease;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+    }
+    .title {
+      font-size: 1.2rem;
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+    .sub {
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+      opacity: 0.8;
+    }
+    audio {
+      width: 100%;
+      margin: 0.5rem 0;
+    }
+    .gen-btn {
+      background: #ff7f50;
+      color: #fff;
+      font-weight: bold;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .gen-btn:hover {
+      background: #ff6330;
+    }
+    .loading-bars {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      margin-top: 0.5rem;
+    }
+    .loading-bars div {
+      width: 6px;
+      height: 20px;
+      background: #ff7f50;
+      border-radius: 3px;
+      transform-origin: bottom;
+    }
+    .status {
+      margin: 1rem;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AI Music Generator</h1>
+    <p class="sub">Click play to hear the original 10s audio, then generate a continuation with the AI model.</p>
+  </header>
+
+  <main>
+    <section id="grid" class="grid"></section>
+    <div id="status" class="status"></div>
+  </main>
+
+  <script src="script.js"></script>
+  <script>
+    // Animate loading bars when button pressed
+    function showLoadingAnimation(container) {
+      container.innerHTML = `
+        <div class="loading-bars">
+          <div></div><div></div><div></div><div></div>
+        </div>
+      `;
+      anime({
+        targets: ".loading-bars div",
+        scaleY: [
+          { value: 0.3, duration: 400, easing: "easeInOutSine" },
+          { value: 1, duration: 400, easing: "easeInOutSine" }
+        ],
+        delay: anime.stagger(100),
+        loop: true
+      });
+    }
+
+    // expose globally for script.js
+    window.showLoadingAnimation = showLoadingAnimation;
+  </script>
+</body>
+</html>
