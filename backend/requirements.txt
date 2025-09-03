@@ -1,6 +1,16 @@
+# FastAPI backend
 fastapi
 uvicorn[standard]
+
+# HTTP requests
 requests
+
+# Music parsing + MIDI
 music21
-pydub
-python-multipart
+
+# Sound + conversions
+midi2audio
+pyFluidSynth
+
+# Optional: scientific stack (music21 sometimes needs it)
+numpy
