@@ -63,7 +63,7 @@ async function generateTune(tuneId, btn) {
   btn.innerText = "Generating…";
 
   const outputDiv = document.getElementById(`gen-output-${tuneId}`);
-  outputDiv.innerHTML = "";
+  window.showLoadingAnimation(outputDiv);
   setStatus("Sending ABC to model and synthesizing audio (this may take a few seconds)...");
 
   try {
