@@ -40,16 +40,16 @@ SOUNDFONT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------- Tune registry ----------
 TUNES = [
-    {"id": 1, "title": "Tune 1", "abc": "tune1.abc", "orig_audio": "tune1.wav"},
-    {"id": 2, "title": "Tune 2", "abc": "tune2.abc", "orig_audio": "tune2.wav"},
-    {"id": 3, "title": "Tune 3", "abc": "tune3.abc", "orig_audio": "tune3.wav"},
-    {"id": 4, "title": "Tune 4", "abc": "tune4.abc", "orig_audio": "tune4.wav"},
-    {"id": 5, "title": "Tune 5", "abc": "tune5.abc", "orig_audio": "tune5.wav"},
-    {"id": 6, "title": "Tune 6", "abc": "tune6.abc", "orig_audio": "tune6.wav"},
-    {"id": 7, "title": "Tune 7", "abc": "tune7.abc", "orig_audio": "tune7.wav"},
-    {"id": 8, "title": "Tune 8", "abc": "tune8.abc", "orig_audio": "tune8.wav"},
-    {"id": 9, "title": "Tune 9", "abc": "tune9.abc", "orig_audio": "tune9.wav"},
-    {"id": 10, "title": "Tune 10", "abc": "tune10.abc", "orig_audio": "tune10.wav"},
+    {"id": 1, "title": "Tune 1", "abc": "tune_1.abc", "orig_audio": "tune_1.wav"},
+    {"id": 2, "title": "Tune 2", "abc": "tune_2.abc", "orig_audio": "tune_2.wav"},
+    {"id": 3, "title": "Tune 3", "abc": "tune_3.abc", "orig_audio": "tune_3.wav"},
+    {"id": 4, "title": "Tune 4", "abc": "tune_4.abc", "orig_audio": "tune_4.wav"},
+    {"id": 5, "title": "Tune 5", "abc": "tune_5.abc", "orig_audio": "tune_5.wav"},
+    {"id": 6, "title": "Tune 6", "abc": "tune_6.abc", "orig_audio": "tune_6.wav"},
+    {"id": 7, "title": "Tune 7", "abc": "tune_7.abc", "orig_audio": "tune_7.wav"},
+    {"id": 8, "title": "Tune 8", "abc": "tune_8.abc", "orig_audio": "tune_8.wav"},
+    {"id": 9, "title": "Tune 9", "abc": "tune_9.abc", "orig_audio": "tune_9.wav"},
+    {"id": 10, "title": "Tune 10", "abc": "tune_10.abc", "orig_audio": "tune_10.wav"},
 ]
 
 # ---------- FastAPI app ----------
