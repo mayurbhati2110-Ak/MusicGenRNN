@@ -1,19 +1,22 @@
 // script.js
-// Fetch tune list, render cards, and perform generate/original playback.
+// Show original 10s audio + generate button for each tune.
+
+// 🔗 Replace with your Render backend URL
+const API_BASE = "https://musicgen-rnn.onrender.com";
 
 const grid = document.getElementById("grid");
 const status = document.getElementById("status");
-const origPlayerDiv = document.getElementById("orig-player");
-const genPlayerDiv = document.getElementById("gen-player");
 
 function setStatus(text) {
   status.innerText = text || "";
 }
 
+// Fetch list of tunes
 async function fetchTuneList() {
   setStatus("Loading tunes...");
   try {
-    const res = await fetch("/list");
+    const res = await fetch(`${API_BASE}/list`);
+    if (!res.ok) throw new Error(await res.text());
     const tunes = await res.json();
     renderGrid(tunes);
     setStatus("");
@@ -22,78 +25,61 @@ async function fetchTuneList() {
   }
 }
 
+// Render cards with audio + generate button
 function renderGrid(tunes) {
   grid.innerHTML = "";
   tunes.forEach((t) => {
     const card = document.createElement("div");
     card.className = "card";
-    card.innerHTML = `<div class="title">${t.title}</div><div class="sub">ID: ${t.id}</div>`;
-    card.onclick = () => onSelectTune(t);
+
+    let audioHtml = "";
+    if (t.orig_audio_url) {
+      audioHtml = `<audio controls src="${API_BASE}${t.orig_audio_url}"></audio>`;
+    } else {
+      audioHtml = `<div class="sub">Original audio not available</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="title">${t.title}</div>
+      <div class="sub">ID: ${t.id}</div>
+      ${audioHtml}
+      <div class="gen-btn-container">
+        <button class="gen-btn" data-id="${t.id}">Generate from this audio</button>
+      </div>
+      <div class="generated-output" id="gen-output-${t.id}"></div>
+    `;
+
+    // add button event
+    const btn = card.querySelector(".gen-btn");
+    btn.onclick = () => generateTune(t.id, btn);
+
     grid.appendChild(card);
   });
 }
 
-function onSelectTune(tune) {
-  // small animation using anime.js
-  anime({
-    targets: ".card",
-    scale: [1, 0.98],
-    duration: 200,
-    easing: "easeInOutQuad",
-  });
-  // highlight selected card visually
-  anime({
-    targets: event.currentTarget || event.target,
-    scale: [1, 1.03, 1],
-    duration: 650,
-    easing: "easeOutElastic(1, .6)",
-  });
-
-  // show original audio if available
-  if (tune.orig_audio_url) {
-    origPlayerDiv.innerHTML = `<audio controls src="${tune.orig_audio_url}"></audio>`;
-  } else {
-    origPlayerDiv.innerHTML = "<div class='sub'>Original audio not available</div>";
-  }
-
-  // clear generated area
-  genPlayerDiv.innerHTML = "<div class='sub'>Click Generate to produce continuation</div>";
-
-  // show generate button
-  setStatus("");
-  showGenerateButton(tune.id);
-}
-
-function showGenerateButton(tuneId) {
-  setStatus("");
-  const btn = document.createElement("button");
-  btn.innerText = "Generate continuation";
-  btn.style.padding = "10px 14px";
-  btn.style.borderRadius = "8px";
-  btn.style.border = "none";
-  btn.style.cursor = "pointer";
-  btn.onclick = () => generateTune(tuneId, btn);
-  genPlayerDiv.innerHTML = "";
-  genPlayerDiv.appendChild(btn);
-}
-
+// Call backend to generate continuation
 async function generateTune(tuneId, btn) {
   btn.disabled = true;
   btn.innerText = "Generating…";
+
+  const outputDiv = document.getElementById(`gen-output-${tuneId}`);
+  outputDiv.innerHTML = "";
   setStatus("Sending ABC to model and synthesizing audio (this may take a few seconds)...");
+
   try {
-    const res = await fetch(`/generate/${tuneId}`);
+    const res = await fetch(`${API_BASE}/generate/${tuneId}`);
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`Server error: ${txt}`);
     }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    genPlayerDiv.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
 
-    // small visual pulse
+    outputDiv.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
+
+    // visual pulse animation
     anime({
-      targets: genPlayerDiv,
+      targets: outputDiv,
       scale: [1, 1.03, 1],
       duration: 700,
       easing: "easeOutElastic(1, .6)",
@@ -102,10 +88,10 @@ async function generateTune(tuneId, btn) {
     setStatus("Generated audio ready.");
   } catch (e) {
     setStatus("Error generating audio: " + e.message);
-    genPlayerDiv.innerHTML = `<div class="sub">Generation failed</div>`;
+    outputDiv.innerHTML = `<div class="sub">Generation failed</div>`;
   } finally {
     btn.disabled = false;
-    btn.innerText = "Generate continuation";
+    btn.innerText = "Generate from this audio";
   }
 }
 
