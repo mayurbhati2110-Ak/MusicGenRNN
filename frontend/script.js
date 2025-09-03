@@ -97,3 +97,25 @@ async function generateTune(tuneId, btn) {
 
 // start
 fetchTuneList();
+
+// Simple music-note loading animation
+window.showLoadingAnimation = function (container) {
+  container.innerHTML = `
+    <div class="loading">
+      <span class="note">🎵</span>
+      <span class="note">🎶</span>
+      <span class="note">🎼</span>
+    </div>
+  `;
+
+  anime({
+    targets: container.querySelectorAll(".note"),
+    translateY: [-5, 5],
+    direction: "alternate",
+    loop: true,
+    easing: "easeInOutSine",
+    duration: 600,
+    delay: anime.stagger(200),
+  });
+};
+
