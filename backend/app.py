@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from music21 import converter, midi
+from fastapi.middleware.cors import CORSMiddleware   # ✅ CORS
 
 # ---------- CONFIG ----------
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,7 +30,6 @@ SOUNDFONT_DIR = BASE_DIR / "soundfonts"
 SOUNDFONT_PATH = SOUNDFONT_DIR / "FluidR3_GM.sf2"  # place a .sf2 here for fluidsynth
 
 HF_API_URL = "https://mayurbhati2110-MusicGenRNN.hf.space/run/predict"  # <-- REPLACE with your Space API URL
-# For a public space you usually don't need a token. If your space needs it, set HF_API_TOKEN below.
 HF_API_TOKEN = ""  # optional
 
 # Make sure directories exist
@@ -39,8 +39,6 @@ TUNES_DIR.mkdir(parents=True, exist_ok=True)
 SOUNDFONT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------- Tune registry ----------
-# We expect tunes: tunes/tune1.abc ... tune10.abc and original wavs in static/original/tune1.wav etc.
-# If you prefer other names, update this list accordingly.
 TUNES = [
     {"id": 1, "title": "Tune 1", "abc": "tune1.abc", "orig_audio": "tune1.wav"},
     {"id": 2, "title": "Tune 2", "abc": "tune2.abc", "orig_audio": "tune2.wav"},
@@ -57,6 +55,15 @@ TUNES = [
 # ---------- FastAPI app ----------
 app = FastAPI(title="MusicGen Backend")
 
+# ✅ CORS fix (allow frontend to call backend)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or ["https://mayurbhati2110-ak.github.io"] for stricter security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # mount static files at /static
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -69,11 +76,6 @@ def find_tune_entry(tune_id: int):
 
 
 def call_hf_space(abc_text: str) -> str:
-    """
-    Call Hugging Face Space predict endpoint.
-    Most Spaces expose /run/predict (returns JSON with 'data' list).
-    If your Space returns a different JSON, adapt this parser.
-    """
     headers = {"Content-Type": "application/json"}
     if HF_API_TOKEN:
         headers["Authorization"] = f"Bearer {HF_API_TOKEN}"
@@ -84,16 +86,13 @@ def call_hf_space(abc_text: str) -> str:
         raise RuntimeError(f"Hugging Face Space returned {res.status_code}: {res.text}")
 
     j = res.json()
-    # Many spaces return {"data": [<output>], ...}
     if isinstance(j, dict):
         if "data" in j and isinstance(j["data"], list) and len(j["data"]) > 0:
             return j["data"][0]
-        # fallback keys
         if "generated_text" in j:
             return j["generated_text"]
         if "abc" in j:
             return j["abc"]
-    # fallback: try raw text
     if isinstance(j, list) and len(j) > 0 and isinstance(j[0], str):
         return j[0]
 
@@ -101,7 +100,6 @@ def call_hf_space(abc_text: str) -> str:
 
 
 def abc_to_midi(abc_path: Path, midi_path: Path):
-    """Convert ABC file to MIDI using music21."""
     score = converter.parse(str(abc_path), format="abc")
     mf = midi.translate.music21ObjectToMidiFile(score)
     mf.open(str(midi_path), "wb")
@@ -110,12 +108,6 @@ def abc_to_midi(abc_path: Path, midi_path: Path):
 
 
 def midi_to_wav_with_fluidsynth(midi_path: Path, wav_path: Path, soundfont_path: Path) -> bool:
-    """
-    Use fluidsynth CLI to render MIDI -> WAV.
-    Command:
-      fluidsynth -ni <soundfont.sf2> <midifile.mid> -F <out.wav> -r 44100
-    Returns True on success.
-    """
     if not soundfont_path.exists():
         return False
     cmd = [
@@ -137,10 +129,6 @@ def midi_to_wav_with_fluidsynth(midi_path: Path, wav_path: Path, soundfont_path:
 
 
 def midi_to_wav_with_ffmpeg(midi_path: Path, wav_path: Path) -> bool:
-    """
-    Try ffmpeg to convert MIDI->WAV.
-    This sometimes requires timidity or a configured ffmpeg able to render MIDI.
-    """
     cmd = ["ffmpeg", "-y", "-i", str(midi_path), str(wav_path)]
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -152,10 +140,6 @@ def midi_to_wav_with_ffmpeg(midi_path: Path, wav_path: Path) -> bool:
 
 @app.get("/list")
 def list_tunes():
-    """
-    Return list of available tunes with IDs, titles and original audio URLs.
-    """
-    host_prefix = ""  # frontend will call relative /static/ URLs; keep empty for same origin
     out = []
     for t in TUNES:
         orig_path = ORIG_DIR / t["orig_audio"]
@@ -188,15 +172,6 @@ def get_original_audio(tune_id: int):
 
 @app.get("/generate/{tune_id}")
 def generate(tune_id: int):
-    """
-    Full pipeline:
-    - read tunes/<tune>.abc
-    - send to HF Space
-    - receive generated abc
-    - write generated abc to GEN_DIR
-    - convert generated abc -> midi -> wav
-    - return generated wav (FileResponse)
-    """
     t = find_tune_entry(tune_id)
     if not t:
         raise HTTPException(status_code=404, detail="Tune not found")
@@ -208,13 +183,11 @@ def generate(tune_id: int):
     with open(abc_path, "r", encoding="utf-8") as f:
         abc_text = f.read()
 
-    # Call HF Space
     try:
         generated_abc = call_hf_space(abc_text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hugging Face Space call failed: {e}")
 
-    # Save generated abc
     uid = uuid.uuid4().hex
     gen_abc_path = GEN_DIR / f"{tune_id}_{uid}.abc"
     gen_midi_path = GEN_DIR / f"{tune_id}_{uid}.mid"
@@ -223,13 +196,11 @@ def generate(tune_id: int):
     with open(gen_abc_path, "w", encoding="utf-8") as f:
         f.write(generated_abc)
 
-    # ABC -> MIDI
     try:
         abc_to_midi(gen_abc_path, gen_midi_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"ABC->MIDI failed: {e}")
 
-    # MIDI -> WAV: try fluidsynth (preferred) then ffmpeg fallback
     ok = False
     if SOUNDFONT_PATH.exists():
         ok = midi_to_wav_with_fluidsynth(gen_midi_path, gen_wav_path, SOUNDFONT_PATH)
@@ -239,5 +210,4 @@ def generate(tune_id: int):
     if not ok or not gen_wav_path.exists():
         raise HTTPException(status_code=500, detail="MIDI->WAV synthesis failed (need fluidsynth or ffmpeg support)")
 
-    # Return generated wav
     return FileResponse(str(gen_wav_path), media_type="audio/wav", filename=gen_wav_path.name)
