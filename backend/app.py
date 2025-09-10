@@ -76,27 +76,24 @@ def find_tune_entry(tune_id: int):
 
 
 def call_hf_space(abc_text: str) -> str:
-    headers = {"Content-Type": "application/json"}
-    if HF_API_TOKEN:
-        headers["Authorization"] = f"Bearer {HF_API_TOKEN}"
-
-    payload = {"data": [abc_text]}
-    res = requests.post(HF_API_URL, json=payload, headers=headers, timeout=60)
-    if res.status_code != 200:
-        raise RuntimeError(f"Hugging Face Space returned {res.status_code}: {res.text}")
-
-    j = res.json()
-    if isinstance(j, dict):
-        if "data" in j and isinstance(j["data"], list) and len(j["data"]) > 0:
-            return j["data"][0]
-        if "generated_text" in j:
-            return j["generated_text"]
-        if "abc" in j:
-            return j["abc"]
-    if isinstance(j, list) and len(j) > 0 and isinstance(j[0], str):
-        return j[0]
-
-    raise RuntimeError("Could not parse Hugging Face Space response JSON.")
+    """
+    Call Hugging Face Space predict endpoint.
+    This Space accepts form data at /generate and returns {"generated": "..."}.
+    """
+    url = "https://mayurbhati2110-MusicGenRNN.hf.space/generate"
+    try:
+        res = requests.post(
+            url,
+            data={"seed": abc_text, "length": 100},   # <-- form fields, not JSON
+            timeout=60
+        )
+        res.raise_for_status()
+        j = res.json()
+        if "generated" in j:
+            return j["generated"]
+        raise RuntimeError(f"Unexpected response: {j}")
+    except Exception as e:
+        raise RuntimeError(f"Hugging Face call failed: {e}")
 
 
 def abc_to_midi(abc_path: Path, midi_path: Path):
