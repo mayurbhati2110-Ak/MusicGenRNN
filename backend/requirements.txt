@@ -14,4 +14,4 @@ pyFluidSynth
 
 # Optional: scientific stack (music21 sometimes needs it)
 numpy
-midi2audio
+python-rtmidi
