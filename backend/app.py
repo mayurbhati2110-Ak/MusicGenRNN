@@ -10,6 +10,7 @@ FastAPI backend for AI music generation pipeline.
 import os
 import uuid
 from pathlib import Path
+import re
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -64,6 +65,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+# ---------- Helpers ----------
 def find_tune_entry(tune_id: int):
     for t in TUNES:
         if t["id"] == tune_id:
@@ -91,6 +93,9 @@ def call_hf_space(abc_text: str) -> str:
 
 
 def sanitize_abc(abc_text: str) -> str:
+    """
+    Remove duplicate M: and K: headers and empty lines
+    """
     lines = abc_text.splitlines()
     sanitized = []
     seen_headers = set()
@@ -104,6 +109,20 @@ def sanitize_abc(abc_text: str) -> str:
             seen_headers.add(line_strip)
         sanitized.append(line_strip)
     return "\n".join(sanitized)
+
+
+def fix_invalid_chords(text: str) -> str:
+    """
+    Remove chords with illegal characters like [B|:BB9B|8CA9...]
+    """
+    return re.sub(r'\[[^\]]*[^A-G#b\s]+[^\]]*\]', '', text)
+
+
+def remove_illegal_symbols(text: str) -> str:
+    """
+    Remove any character not valid in ABC notation
+    """
+    return re.sub(r'[^A-Ga-gzZ0-9\/\[\]#b|: \n]', '', text)
 
 
 def abc_to_midi(abc_path: Path, midi_path: Path):
@@ -130,6 +149,7 @@ def midi_to_wav_python(midi_path: Path, wav_path: Path, soundfont_path: Path) ->
         return False
 
 
+# ---------- API Endpoints ----------
 @app.get("/list")
 def list_tunes():
     out = []
@@ -179,21 +199,16 @@ def generate(tune_id: int):
     print(f"📄 [Generate] Loaded ABC length={len(abc_text)}")
 
     try:
-        # Call HF and sanitize headers
-        generated_abc = sanitize_abc(call_hf_space(abc_text))
-
-        # Remove invalid chords and illegal symbols
-        import re
-        def fix_invalid_chords(text: str) -> str:
-            # Remove chords with illegal characters
-            return re.sub(r'\[[^\]]*[^A-G#b\s]+[^\]]*\]', '', text)
-
+        # 1️⃣ Call HF and sanitize ABC
+        generated_abc = call_hf_space(abc_text)
+        generated_abc = sanitize_abc(generated_abc)
         generated_abc = fix_invalid_chords(generated_abc)
-
+        generated_abc = remove_illegal_symbols(generated_abc)
         print(f"💾 [Generate] Sanitized & fixed generated ABC length={len(generated_abc)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hugging Face Space call failed: {e}")
 
+    # Paths
     uid = uuid.uuid4().hex
     gen_abc_path = GEN_DIR / f"{tune_id}_{uid}.abc"
     gen_midi_path = GEN_DIR / f"{tune_id}_{uid}.mid"
@@ -214,7 +229,7 @@ def generate(tune_id: int):
             return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
         raise HTTPException(status_code=500, detail=f"ABC->MIDI failed: {e}")
 
-    # Convert MIDI -> WAV using midi2audio
+    # Convert MIDI -> WAV
     ok = midi_to_wav_python(gen_midi_path, gen_wav_path, SOUNDFONT_PATH)
     if not ok:
         orig_path = ORIG_DIR / t["orig_audio"]
