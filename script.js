@@ -108,8 +108,14 @@ async function generateTunePopup(tuneId, btn) {
     overlay.style.display = "block";
     popupContainer.style.display = "flex";
     popupContainer.innerHTML = `
-      <div style="margin-bottom: 16px; font-size: 1.2rem; font-weight:bold;">Generated Audio</div>
-      <audio controls autoplay style="width: 100%; height: 60px;" src="${url}"></audio>
+      <div style="margin-bottom: 16px; font-size: 1.5rem; font-weight:bold;">Generated Audio</div>
+      <audio id="popup-audio" controls autoplay style="
+        width: 100%;
+        height: 70%;
+        background: #333;
+        border-radius: 12px;
+        outline: none;
+      " src="${url}"></audio>
       <button id="close-popup" style="
         margin-top: 24px;
         background: #ff7f50;
@@ -122,13 +128,18 @@ async function generateTunePopup(tuneId, btn) {
       ">Close</button>
     `;
 
+    const audioEl = document.getElementById("popup-audio");
+
+    // Close actions
     document.getElementById("close-popup").onclick = () => {
+      audioEl.pause();
       popupContainer.style.display = "none";
       overlay.style.display = "none";
       popupContainer.innerHTML = "";
     };
 
     overlay.onclick = () => {
+      audioEl.pause();
       popupContainer.style.display = "none";
       overlay.style.display = "none";
       popupContainer.innerHTML = "";
@@ -143,5 +154,5 @@ async function generateTunePopup(tuneId, btn) {
   }
 }
 
-// start
+// Start
 fetchTuneList();
