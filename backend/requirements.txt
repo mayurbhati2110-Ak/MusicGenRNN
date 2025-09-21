@@ -6,7 +6,7 @@ uvicorn[standard]
 requests
 
 # Music parsing + MIDI
-music21
+mido
 
 # Sound + conversions
 midi2audio
