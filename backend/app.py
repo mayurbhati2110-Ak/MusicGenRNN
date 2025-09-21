@@ -81,7 +81,7 @@ def call_hf_space(abc_text: str) -> str:
         res = requests.post(
             HF_API_URL,
             data={"seed": abc_text, "length": 100},  # form fields, not JSON
-            timeout=60
+            timeout=180
         )
         res.raise_for_status()
         j = res.json()
