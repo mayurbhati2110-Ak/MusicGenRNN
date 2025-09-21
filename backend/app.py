@@ -1,24 +1,24 @@
 """
-FastAPI backend for AI music generation pipeline.
+FastAPI backend for AI music generation pipeline (pure Python rough version).
 
 - Serves list of tunes and original WAVs
 - Sends chosen tune's ABC to Hugging Face Space (public) and receives generated ABC
-- Converts generated ABC -> MIDI -> WAV using Python midi2audio
-- Returns generated WAV to frontend
+- Converts ABC -> rough MIDI -> WAV
+- Returns WAV to frontend
 """
 
 import os
 import uuid
-from pathlib import Path
 import re
+from pathlib import Path
 
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from music21 import converter, midi
 from fastapi.middleware.cors import CORSMiddleware
-from midi2audio import FluidSynth   # ✅ Python MIDI->WAV
+from midi2audio import FluidSynth
+from mido import Message, MidiFile, MidiTrack, bpm2tempo
 
 # ---------- CONFIG ----------
 BASE_DIR = Path(__file__).resolve().parent
@@ -26,10 +26,9 @@ TUNES_DIR = BASE_DIR / "tunes"
 STATIC_DIR = BASE_DIR / "static"
 ORIG_DIR = STATIC_DIR / "original"
 GEN_DIR = STATIC_DIR / "generated"
-SOUNDFONT_PATH = BASE_DIR / "FluidR3_GM.sf2"  # place your .sf2 here
+SOUNDFONT_PATH = BASE_DIR / "FluidR3_GM.sf2"
 
 HF_API_URL = "https://mayurbhati2110-MusicGenRNN.hf.space/generate"
-HF_API_TOKEN = ""  # optional
 
 # Create directories
 ORIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -53,7 +52,6 @@ TUNES = [
 # ---------- FastAPI app ----------
 app = FastAPI(title="MusicGen Backend")
 
-# ✅ CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -76,11 +74,7 @@ def find_tune_entry(tune_id: int):
 def call_hf_space(abc_text: str) -> str:
     print("🌐 [HF] Calling Hugging Face Space...")
     try:
-        res = requests.post(
-            HF_API_URL,
-            data={"seed": abc_text, "length": 100},
-            timeout=180
-        )
+        res = requests.post(HF_API_URL, data={"seed": abc_text, "length": 100}, timeout=180)
         res.raise_for_status()
         j = res.json()
         if "generated" in j:
@@ -93,75 +87,48 @@ def call_hf_space(abc_text: str) -> str:
 
 
 def sanitize_abc(abc_text: str) -> str:
+    # Remove illegal characters and ensure L: is present
+    abc_text = re.sub(r'[^A-Ga-gzZ0-9\/\[\]#b|: \n]', '', abc_text)
+    if "L:" not in abc_text:
+        abc_text = "L:1/8\n" + abc_text
+    return abc_text
+
+
+def abc_to_midi_simple(abc_text: str, midi_path: Path) -> bool:
     """
-    Remove duplicate M: and K: headers, empty lines,
-    and ensure default note length L: is present.
+    Rough ABC -> MIDI conversion: converts letters A-G to MIDI notes
+    Ignores timing and advanced notation; produces playable MIDI
     """
-    lines = abc_text.splitlines()
-    sanitized = []
-    seen_headers = set()
-    has_L = False
+    note_base = {"C": 60, "D": 62, "E": 64, "F": 65, "G": 67, "A": 69, "B": 71}
+    midi_file = MidiFile()
+    track = MidiTrack()
+    midi_file.tracks.append(track)
+    track.append(Message('program_change', program=0, time=0))
+    tempo = bpm2tempo(120)
+    track.append(Message('note_on', note=60, velocity=0, time=0))  # dummy
 
-    for line in lines:
-        line_strip = line.strip()
-        if not line_strip:
-            continue
-        if line_strip.startswith("M:") or line_strip.startswith("K:") or line_strip.startswith("L:"):
-            if line_strip in seen_headers:
-                continue
-            seen_headers.add(line_strip)
-        if line_strip.startswith("L:"):
-            has_L = True
-        sanitized.append(line_strip)
-
-    # Insert default note length if missing
-    if not has_L:
-        # Insert after X: and T: if they exist, else at the top
-        insert_index = 0
-        for i, line in enumerate(sanitized):
-            if line.startswith("X:") or line.startswith("T:"):
-                insert_index = i + 1
-        sanitized.insert(insert_index, "L:1/8")
-
-    return "\n".join(sanitized)
+    for c in abc_text.upper():
+        if c in note_base:
+            track.append(Message('note_on', note=note_base[c], velocity=64, time=0))
+            track.append(Message('note_off', note=note_base[c], velocity=64, time=240))
+    try:
+        midi_file.save(str(midi_path))
+        return midi_path.exists()
+    except Exception as e:
+        print("❌ abc_to_midi_simple failed:", e)
+        return False
 
 
-
-def fix_invalid_chords(text: str) -> str:
-    """
-    Remove chords with illegal characters like [B|:BB9B|8CA9...]
-    """
-    return re.sub(r'\[[^\]]*[^A-G#b\s]+[^\]]*\]', '', text)
-
-
-def remove_illegal_symbols(text: str) -> str:
-    """
-    Remove any character not valid in ABC notation
-    """
-    return re.sub(r'[^A-Ga-gzZ0-9\/\[\]#b|: \n]', '', text)
-
-
-def abc_to_midi(abc_path: Path, midi_path: Path):
-    print(f"🎼 [MIDI] Converting {abc_path} -> {midi_path}")
-    score = converter.parse(str(abc_path), format="abc")
-    mf = midi.translate.music21ObjectToMidiFile(score)
-    mf.open(str(midi_path), "wb")
-    mf.write()
-    mf.close()
-    print("✅ [MIDI] Conversion success")
-
-
-def midi_to_wav_python(midi_path: Path, wav_path: Path, soundfont_path: Path) -> bool:
-    if not soundfont_path.exists():
-        print("⚠️ [midi2audio] SoundFont missing")
+def midi_to_wav(midi_path: Path, wav_path: Path, sf_path: Path) -> bool:
+    if not sf_path.exists():
+        print("⚠️ SoundFont missing")
         return False
     try:
-        fs = FluidSynth(str(soundfont_path))
+        fs = FluidSynth(str(sf_path))
         fs.midi_to_audio(str(midi_path), str(wav_path))
-        print("✅ [midi2audio] WAV created")
         return wav_path.exists()
     except Exception as e:
-        print("❌ [midi2audio] failed:", e)
+        print("❌ MIDI->WAV failed:", e)
         return False
 
 
@@ -201,11 +168,9 @@ def get_original_audio(tune_id: int):
 @app.get("/generate/{tune_id}")
 def generate(tune_id: int):
     print(f"\n➡️ [Generate] Starting for tune_id={tune_id}")
-
     t = find_tune_entry(tune_id)
     if not t:
         raise HTTPException(status_code=404, detail="Tune not found")
-
     abc_path = TUNES_DIR / t["abc"]
     if not abc_path.exists():
         raise HTTPException(status_code=404, detail="ABC file missing")
@@ -215,44 +180,27 @@ def generate(tune_id: int):
     print(f"📄 [Generate] Loaded ABC length={len(abc_text)}")
 
     try:
-        # 1️⃣ Call HF and sanitize ABC
         generated_abc = call_hf_space(abc_text)
         generated_abc = sanitize_abc(generated_abc)
-        generated_abc = fix_invalid_chords(generated_abc)
-        generated_abc = remove_illegal_symbols(generated_abc)
-        print(f"💾 [Generate] Sanitized & fixed generated ABC length={len(generated_abc)}")
+        print(f"💾 [Generate] Sanitized ABC length={len(generated_abc)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hugging Face Space call failed: {e}")
 
-    # Paths
     uid = uuid.uuid4().hex
-    gen_abc_path = GEN_DIR / f"{tune_id}_{uid}.abc"
     gen_midi_path = GEN_DIR / f"{tune_id}_{uid}.mid"
     gen_wav_path = GEN_DIR / f"{tune_id}_{uid}.wav"
 
-    with open(gen_abc_path, "w", encoding="utf-8") as f:
-        f.write(generated_abc)
-    print(f"💾 [Generate] Saved generated ABC -> {gen_abc_path}")
-
-    # Convert ABC -> MIDI
-    try:
-        abc_to_midi(gen_abc_path, gen_midi_path)
-    except Exception as e:
-        print(f"❌ ABC->MIDI failed: {e}")
+    # Convert ABC -> rough MIDI
+    if not abc_to_midi_simple(generated_abc, gen_midi_path):
         orig_path = ORIG_DIR / t["orig_audio"]
-        if orig_path.exists():
-            print("⚠️ Returning original audio due to conversion failure")
-            return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
-        raise HTTPException(status_code=500, detail=f"ABC->MIDI failed: {e}")
+        print("⚠️ Returning original audio due to ABC->MIDI failure")
+        return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
 
     # Convert MIDI -> WAV
-    ok = midi_to_wav_python(gen_midi_path, gen_wav_path, SOUNDFONT_PATH)
-    if not ok:
+    if not midi_to_wav(gen_midi_path, gen_wav_path, SOUNDFONT_PATH):
         orig_path = ORIG_DIR / t["orig_audio"]
-        if orig_path.exists():
-            print("⚠️ Returning original audio due to MIDI->WAV failure")
-            return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
-        raise HTTPException(status_code=500, detail="MIDI->WAV synthesis failed (check SoundFont)")
+        print("⚠️ Returning original audio due to MIDI->WAV failure")
+        return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
 
     print(f"✅ [Generate] Returning WAV -> {gen_wav_path}\n")
     return FileResponse(str(gen_wav_path), media_type="audio/wav", filename=gen_wav_path.name)
