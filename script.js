@@ -8,22 +8,42 @@ function setStatus(text) {
   status.innerText = text || "";
 }
 
-// Create popup container for generated audio
+// Create full-screen popup container for generated audio
 let popupContainer = document.createElement("div");
 popupContainer.id = "audio-popup";
 popupContainer.style.cssText = `
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  height: 80%;
   background: #1c1c1c;
   color: #fff;
-  padding: 16px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  padding: 24px;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.7);
   z-index: 9999;
   display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 `;
 document.body.appendChild(popupContainer);
+
+// Overlay background
+let overlay = document.createElement("div");
+overlay.id = "audio-overlay";
+overlay.style.cssText = `
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.6);
+  z-index: 9998;
+  display: none;
+`;
+document.body.appendChild(overlay);
 
 // Fetch list of tunes
 async function fetchTuneList() {
@@ -69,7 +89,7 @@ function renderGrid(tunes) {
   });
 }
 
-// Generate AI audio and show in popup player
+// Generate AI audio and show in full-screen popup
 async function generateTunePopup(tuneId, btn) {
   btn.disabled = true;
   btn.innerText = "Generating…";
@@ -85,25 +105,32 @@ async function generateTunePopup(tuneId, btn) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
 
-    // Show popup player
+    overlay.style.display = "block";
+    popupContainer.style.display = "flex";
     popupContainer.innerHTML = `
-      <div style="margin-bottom: 8px; font-weight:bold;">Generated Audio</div>
-      <audio controls autoplay src="${url}"></audio>
+      <div style="margin-bottom: 16px; font-size: 1.2rem; font-weight:bold;">Generated Audio</div>
+      <audio controls autoplay style="width: 100%; height: 60px;" src="${url}"></audio>
       <button id="close-popup" style="
-        margin-top: 8px;
+        margin-top: 24px;
         background: #ff7f50;
         border: none;
-        padding: 6px 12px;
+        padding: 12px 24px;
         color: #fff;
-        border-radius: 6px;
+        border-radius: 8px;
         cursor: pointer;
+        font-size: 1rem;
       ">Close</button>
     `;
-    popupContainer.style.display = "block";
 
-    // Close button event
     document.getElementById("close-popup").onclick = () => {
       popupContainer.style.display = "none";
+      overlay.style.display = "none";
+      popupContainer.innerHTML = "";
+    };
+
+    overlay.onclick = () => {
+      popupContainer.style.display = "none";
+      overlay.style.display = "none";
       popupContainer.innerHTML = "";
     };
 
@@ -118,24 +145,3 @@ async function generateTunePopup(tuneId, btn) {
 
 // start
 fetchTuneList();
-
-// Optional: Loading animation
-window.showLoadingAnimation = function (container) {
-  container.innerHTML = `
-    <div class="loading">
-      <span class="note">🎵</span>
-      <span class="note">🎶</span>
-      <span class="note">🎼</span>
-    </div>
-  `;
-
-  anime({
-    targets: container.querySelectorAll(".note"),
-    translateY: [-5, 5],
-    direction: "alternate",
-    loop: true,
-    easing: "easeInOutSine",
-    duration: 600,
-    delay: anime.stagger(200),
-  });
-};
