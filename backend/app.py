@@ -26,7 +26,8 @@ TUNES_DIR = BASE_DIR / "tunes"
 STATIC_DIR = BASE_DIR / "static"
 ORIG_DIR = STATIC_DIR / "original"
 GEN_DIR = STATIC_DIR / "generated"
-SOUNDFONT_PATH = BASE_DIR / "FluidR3_GM.sf2"
+SOUNDFONT_PATH = BASE_DIR / "soundfonts" / "FluidR3_GM.sf2"
+
 
 HF_API_URL = "https://mayurbhati2110-MusicGenRNN.hf.space/generate"
 
