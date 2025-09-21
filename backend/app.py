@@ -94,6 +94,27 @@ def call_hf_space(abc_text: str) -> str:
         raise RuntimeError(f"Hugging Face call failed: {e}")
 
 
+def sanitize_abc(abc_text: str) -> str:
+    """
+    Simple sanitization to avoid music21 parsing errors:
+    - Remove empty lines
+    - Remove duplicate TimeSignature (M:) and KeySignature (K:) lines
+    """
+    lines = abc_text.splitlines()
+    sanitized = []
+    seen_headers = set()
+    for line in lines:
+        line_strip = line.strip()
+        if not line_strip:
+            continue
+        if line_strip.startswith("M:") or line_strip.startswith("K:"):
+            if line_strip in seen_headers:
+                continue
+            seen_headers.add(line_strip)
+        sanitized.append(line_strip)
+    return "\n".join(sanitized)
+
+
 def abc_to_midi(abc_path: Path, midi_path: Path):
     print(f"🎼 [MIDI] Converting {abc_path} -> {midi_path}")
     score = converter.parse(str(abc_path), format="abc")
@@ -185,6 +206,8 @@ def generate(tune_id: int):
     # Call Hugging Face
     try:
         generated_abc = call_hf_space(abc_text)
+        generated_abc = sanitize_abc(generated_abc)
+        print(f"💾 [Generate] Sanitized generated ABC length={len(generated_abc)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hugging Face Space call failed: {e}")
 
@@ -202,6 +225,11 @@ def generate(tune_id: int):
         abc_to_midi(gen_abc_path, gen_midi_path)
     except Exception as e:
         print(f"❌ ABC->MIDI failed: {e}")
+        # Fallback: return original WAV instead of crashing
+        orig_path = ORIG_DIR / t["orig_audio"]
+        if orig_path.exists():
+            print(f"⚠️ Returning original WAV due to ABC->MIDI failure -> {orig_path}")
+            return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
         raise HTTPException(status_code=500, detail=f"ABC->MIDI failed: {e}")
 
     # Convert to WAV
@@ -215,6 +243,11 @@ def generate(tune_id: int):
 
     if not ok or not gen_wav_path.exists():
         print("❌ MIDI->WAV synthesis failed")
+        # Fallback: return original WAV if generated WAV fails
+        orig_path = ORIG_DIR / t["orig_audio"]
+        if orig_path.exists():
+            print(f"⚠️ Returning original WAV due to WAV synthesis failure -> {orig_path}")
+            return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
         raise HTTPException(status_code=500, detail="MIDI->WAV synthesis failed (need fluidsynth or ffmpeg support)")
 
     print(f"✅ [Generate] Returning WAV -> {gen_wav_path}\n")
