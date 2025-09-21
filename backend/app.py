@@ -94,21 +94,37 @@ def call_hf_space(abc_text: str) -> str:
 
 def sanitize_abc(abc_text: str) -> str:
     """
-    Remove duplicate M: and K: headers and empty lines
+    Remove duplicate M: and K: headers, empty lines,
+    and ensure default note length L: is present.
     """
     lines = abc_text.splitlines()
     sanitized = []
     seen_headers = set()
+    has_L = False
+
     for line in lines:
         line_strip = line.strip()
         if not line_strip:
             continue
-        if line_strip.startswith("M:") or line_strip.startswith("K:"):
+        if line_strip.startswith("M:") or line_strip.startswith("K:") or line_strip.startswith("L:"):
             if line_strip in seen_headers:
                 continue
             seen_headers.add(line_strip)
+        if line_strip.startswith("L:"):
+            has_L = True
         sanitized.append(line_strip)
+
+    # Insert default note length if missing
+    if not has_L:
+        # Insert after X: and T: if they exist, else at the top
+        insert_index = 0
+        for i, line in enumerate(sanitized):
+            if line.startswith("X:") or line.startswith("T:"):
+                insert_index = i + 1
+        sanitized.insert(insert_index, "L:1/8")
+
     return "\n".join(sanitized)
+
 
 
 def fix_invalid_chords(text: str) -> str:
