@@ -1,15 +1,18 @@
 """
-FastAPI backend for AI music generation pipeline (pure Python rough version).
+FastAPI backend for AI music generation pipeline (fully Python rough version).
 
 - Serves list of tunes and original WAVs
 - Sends chosen tune's ABC to Hugging Face Space (public) and receives generated ABC
-- Converts ABC -> rough MIDI -> WAV
+- Converts ABC -> rough MIDI -> rough WAV (pure Python)
 - Returns WAV to frontend
 """
 
 import os
 import uuid
 import re
+import math
+import wave
+import struct
 from pathlib import Path
 
 import requests
@@ -17,8 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from midi2audio import FluidSynth
-from mido import Message, MidiFile, MidiTrack, bpm2tempo
+from mido import Message, MidiFile, MidiTrack
 
 # ---------- CONFIG ----------
 BASE_DIR = Path(__file__).resolve().parent
@@ -26,8 +28,6 @@ TUNES_DIR = BASE_DIR / "tunes"
 STATIC_DIR = BASE_DIR / "static"
 ORIG_DIR = STATIC_DIR / "original"
 GEN_DIR = STATIC_DIR / "generated"
-SOUNDFONT_PATH = BASE_DIR / "soundfonts" / "FluidR3_GM.sf2"
-
 
 HF_API_URL = "https://mayurbhati2110-MusicGenRNN.hf.space/generate"
 
@@ -63,7 +63,6 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-
 # ---------- Helpers ----------
 def find_tune_entry(tune_id: int):
     for t in TUNES:
@@ -88,7 +87,6 @@ def call_hf_space(abc_text: str) -> str:
 
 
 def sanitize_abc(abc_text: str) -> str:
-    # Remove illegal characters and ensure L: is present
     abc_text = re.sub(r'[^A-Ga-gzZ0-9\/\[\]#b|: \n]', '', abc_text)
     if "L:" not in abc_text:
         abc_text = "L:1/8\n" + abc_text
@@ -96,18 +94,12 @@ def sanitize_abc(abc_text: str) -> str:
 
 
 def abc_to_midi_simple(abc_text: str, midi_path: Path) -> bool:
-    """
-    Rough ABC -> MIDI conversion: converts letters A-G to MIDI notes
-    Ignores timing and advanced notation; produces playable MIDI
-    """
     note_base = {"C": 60, "D": 62, "E": 64, "F": 65, "G": 67, "A": 69, "B": 71}
     midi_file = MidiFile()
     track = MidiTrack()
     midi_file.tracks.append(track)
     track.append(Message('program_change', program=0, time=0))
-    tempo = bpm2tempo(120)
     track.append(Message('note_on', note=60, velocity=0, time=0))  # dummy
-
     for c in abc_text.upper():
         if c in note_base:
             track.append(Message('note_on', note=note_base[c], velocity=64, time=0))
@@ -120,16 +112,37 @@ def abc_to_midi_simple(abc_text: str, midi_path: Path) -> bool:
         return False
 
 
-def midi_to_wav(midi_path: Path, wav_path: Path, sf_path: Path) -> bool:
-    if not sf_path.exists():
-        print("⚠️ SoundFont missing")
-        return False
+# Pure Python MIDI -> WAV rough synthesis
+def midi_to_wav_python(midi_path: Path, wav_path: Path, sample_rate=44100) -> bool:
     try:
-        fs = FluidSynth(str(sf_path))
-        fs.midi_to_audio(str(midi_path), str(wav_path))
-        return wav_path.exists()
+        from mido import MidiFile
+        import numpy as np
+
+        midi_data = MidiFile(str(midi_path))
+        notes = []
+        for track in midi_data.tracks:
+            time = 0
+            for msg in track:
+                time += msg.time
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    notes.append((time, msg.note))
+        # Generate WAV
+        duration = 2  # each note 2 sec roughly
+        amplitude = 32767
+        audio = np.zeros(int(duration * sample_rate * len(notes)), dtype=np.int16)
+        for i, (t, note) in enumerate(notes):
+            freq = 440 * 2 ** ((note - 69) / 12)
+            start_idx = i * duration * sample_rate
+            for j in range(int(duration * sample_rate)):
+                audio[int(start_idx + j)] = int(amplitude * math.sin(2 * math.pi * freq * j / sample_rate))
+        with wave.open(str(wav_path), 'w') as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(sample_rate)
+            f.writeframes(audio.tobytes())
+        return True
     except Exception as e:
-        print("❌ MIDI->WAV failed:", e)
+        print("❌ midi_to_wav_python failed:", e)
         return False
 
 
@@ -191,14 +204,12 @@ def generate(tune_id: int):
     gen_midi_path = GEN_DIR / f"{tune_id}_{uid}.mid"
     gen_wav_path = GEN_DIR / f"{tune_id}_{uid}.wav"
 
-    # Convert ABC -> rough MIDI
     if not abc_to_midi_simple(generated_abc, gen_midi_path):
         orig_path = ORIG_DIR / t["orig_audio"]
         print("⚠️ Returning original audio due to ABC->MIDI failure")
         return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
 
-    # Convert MIDI -> WAV
-    if not midi_to_wav(gen_midi_path, gen_wav_path, SOUNDFONT_PATH):
+    if not midi_to_wav_python(gen_midi_path, gen_wav_path):
         orig_path = ORIG_DIR / t["orig_audio"]
         print("⚠️ Returning original audio due to MIDI->WAV failure")
         return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
