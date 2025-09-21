@@ -179,8 +179,18 @@ def generate(tune_id: int):
     print(f"📄 [Generate] Loaded ABC length={len(abc_text)}")
 
     try:
+        # Call HF and sanitize headers
         generated_abc = sanitize_abc(call_hf_space(abc_text))
-        print(f"💾 [Generate] Sanitized generated ABC length={len(generated_abc)}")
+
+        # Remove invalid chords and illegal symbols
+        import re
+        def fix_invalid_chords(text: str) -> str:
+            # Remove chords with illegal characters
+            return re.sub(r'\[[^\]]*[^A-G#b\s]+[^\]]*\]', '', text)
+
+        generated_abc = fix_invalid_chords(generated_abc)
+
+        print(f"💾 [Generate] Sanitized & fixed generated ABC length={len(generated_abc)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hugging Face Space call failed: {e}")
 
@@ -200,6 +210,7 @@ def generate(tune_id: int):
         print(f"❌ ABC->MIDI failed: {e}")
         orig_path = ORIG_DIR / t["orig_audio"]
         if orig_path.exists():
+            print("⚠️ Returning original audio due to conversion failure")
             return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
         raise HTTPException(status_code=500, detail=f"ABC->MIDI failed: {e}")
 
@@ -208,6 +219,7 @@ def generate(tune_id: int):
     if not ok:
         orig_path = ORIG_DIR / t["orig_audio"]
         if orig_path.exists():
+            print("⚠️ Returning original audio due to MIDI->WAV failure")
             return FileResponse(str(orig_path), media_type="audio/wav", filename=orig_path.name)
         raise HTTPException(status_code=500, detail="MIDI->WAV synthesis failed (check SoundFont)")
 
